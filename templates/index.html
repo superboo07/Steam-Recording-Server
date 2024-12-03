@@ -36,7 +36,8 @@
         #videoContainer {
             width: 80%;
             display: flex;
-            justify-content: flex-start;
+            flex-direction: column;
+            align-items: flex-start;
         }
 
         video {
@@ -52,6 +53,7 @@
             border: 1px solid #424242;
             padding: 10px;
             margin-right: 10px;
+            margin-top: 10px;
             border-radius: 5px;
             font-size: 14px;
             cursor: pointer;
@@ -69,113 +71,51 @@
             min-width: 200px;
         }
 
-        #syncButton {
-            margin-left: auto;
+        /* Modal styling */
+        #transcodeModal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0, 0, 0, 0.8);
+            justify-content: center;
+            align-items: center;
+        }
+
+        #transcodeModalContent {
+            background-color: #2e2e2e;
+            padding: 20px;
+            border-radius: 10px;
+            width: 400px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #progressBar {
+            width: 100%;
+            background-color: #424242;
+            height: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        #progressBarFill {
+            height: 100%;
+            width: 0%;
+            background-color: #00bcd4;
+            border-radius: 10px;
+        }
+
+        #downloadTranscodedButton {
+            display: none;
+            margin-top: 20px;
         }
     </style>
-    <script>
-        document.addEventListener("DOMContentLoaded", async () => {
-            const videoSelector = document.getElementById("videoSelector");
-            const videoPlayer = document.getElementById("videoPlayer");
-            const downloadButton = document.getElementById("downloadButton");
-            const syncButton = document.getElementById("syncButton");
-
-            let currentVideoPath = "";
-
-            // Initialize Shaka Player
-            const player = new shaka.Player(videoPlayer);
-
-            player.addEventListener("error", (event) => {
-                console.error("Shaka Player Error:", event.detail);
-            });
-
-            // Fetch the list of MP4 videos
-            const loadVideos = async () => {
-                try {
-                    const response = await fetch("/videos");
-                    const videos = await response.json();
-                    console.log("Videos received:", videos);
-
-                    // Clear dropdown to avoid duplicates
-                    videoSelector.innerHTML = '<option value="">Select a video</option>';
-
-                    // Populate dropdown
-                    videos.forEach(video => {
-                        const option = document.createElement("option");
-                        option.value = video.path;
-                        option.textContent = video.name;
-                        videoSelector.appendChild(option);
-                    });
-                } catch (error) {
-                    console.error("Error fetching videos:", error);
-                }
-            };
-
-            await loadVideos();
-
-            // Handle video selection
-            videoSelector.addEventListener("change", async () => {
-                const selectedVideo = videoSelector.value;
-                if (selectedVideo) {
-                    currentVideoPath = selectedVideo; // Save path for download
-                    console.log("Loading video from:", selectedVideo);
-                    try {
-                        await player.load(selectedVideo);
-                        console.log("Video loaded successfully!");
-                    } catch (error) {
-                        console.error("Error loading video:", error);
-                    }
-                }
-            });
-
-            // Handle MP4 download
-            downloadButton.addEventListener("click", async () => {
-                if (currentVideoPath) {
-                    console.log("Preparing to download:", currentVideoPath);
-                    try {
-                        const response = await fetch(currentVideoPath);
-                        if (!response.ok) {
-                            throw new Error(`Failed to fetch ${currentVideoPath}: ${response.statusText}`);
-                        }
-                        const blob = await response.blob();
-                        const url = URL.createObjectURL(blob);
-
-                        // Create a temporary link element for downloading
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = currentVideoPath.split("/").pop(); // Use the filename from the path
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                    } catch (error) {
-                        console.error("Error downloading video:", error);
-                        alert("Failed to download the video.");
-                    }
-                } else {
-                    alert("Please select a video first!");
-                }
-            });
-
-            // Trigger Sync
-            syncButton.addEventListener("click", async () => {
-                console.log("Syncing...");
-                try {
-                    const response = await fetch("/sync", { method: "POST" });
-                    const result = await response.json();
-                    if (result.status === "success") {
-                        alert("Sync started successfully!");
-                        await loadVideos(); // Reload videos after sync
-                    } else {
-                        alert(`Error: ${result.message}`);
-                    }
-                } catch (error) {
-                    console.error("Error triggering sync:", error);
-                    alert("Failed to start sync.");
-                }
-            });
-        });
-    </script>
 </head>
 <body>
     <h1>Steam Recordings Player</h1>
@@ -183,11 +123,113 @@
         <select id="videoSelector">
             <option value="">Select a video</option>
         </select>
-        <button id="downloadButton">Download MP4</button>
         <button id="syncButton">Sync</button>
+        <button id="transcodeButton">Transcode</button>
     </div>
     <div id="videoContainer">
         <video id="videoPlayer" controls autoplay></video>
+        <button id="downloadButton">Download MP4</button>
     </div>
+
+    <!-- Transcode Modal -->
+    <div id="transcodeModal">
+        <div id="transcodeModalContent">
+            <h2>Transcode Settings</h2>
+            <label for="cqValue">CQ (Constant Quality):</label>
+            <input type="number" id="cqValue" value="23" min="0" max="51">
+
+            <label for="presetValue">Preset:</label>
+            <select id="presetValue">
+                <option value="ultrafast">Ultrafast</option>
+                <option value="fast">Fast</option>
+                <option value="medium" selected>Medium</option>
+                <option value="slow">Slow</option>
+                <option value="veryslow">Very Slow</option>
+            </select>
+
+            <button id="startTranscodeButton">Start Transcode</button>
+
+            <div id="progressBar">
+                <div id="progressBarFill"></div>
+            </div>
+
+            <button id="downloadTranscodedButton">Download Transcoded File</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", async () => {
+            const videoSelector = document.getElementById("videoSelector");
+            const videoPlayer = document.getElementById("videoPlayer");
+            const downloadButton = document.getElementById("downloadButton");
+            const syncButton = document.getElementById("syncButton");
+            const transcodeButton = document.getElementById("transcodeButton");
+            const transcodeModal = document.getElementById("transcodeModal");
+            const startTranscodeButton = document.getElementById("startTranscodeButton");
+            const progressBarFill = document.getElementById("progressBarFill");
+            const downloadTranscodedButton = document.getElementById("downloadTranscodedButton");
+
+            let currentVideoPath = "";
+
+            // Open Transcode Modal
+            transcodeButton.addEventListener("click", () => {
+                if (!currentVideoPath) {
+                    alert("Please select a video first!");
+                    return;
+                }
+                transcodeModal.style.display = "flex";
+            });
+
+            // Start Transcoding
+            startTranscodeButton.addEventListener("click", async () => {
+                const cqValue = document.getElementById("cqValue").value;
+                const presetValue = document.getElementById("presetValue").value;
+
+                progressBarFill.style.width = "0%";
+                downloadTranscodedButton.style.display = "none";
+
+                const response = await fetch("/transcode", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        videoPath: currentVideoPath,
+                        cq: cqValue,
+                        preset: presetValue
+                    }),
+                });
+
+                if (!response.ok) {
+                    alert("Transcoding failed!");
+                    return;
+                }
+
+                const reader = response.body.getReader();
+                let receivedLength = 0;
+                const contentLength = +response.headers.get("Content-Length");
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    receivedLength += value.length;
+                    const percent = (receivedLength / contentLength) * 100;
+                    progressBarFill.style.width = percent.toFixed(2) + "%";
+                }
+
+                alert("Transcoding completed!");
+                downloadTranscodedButton.style.display = "block";
+                downloadTranscodedButton.onclick = () => {
+                    window.open("/download-transcoded");
+                };
+            });
+
+            // Close Modal on Outside Click
+            transcodeModal.addEventListener("click", (e) => {
+                if (e.target === transcodeModal) {
+                    transcodeModal.style.display = "none";
+                }
+            });
+        });
+    </script>
 </body>
 </html>
