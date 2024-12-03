@@ -9,8 +9,6 @@ services:
       - "5000:5000"
     volumes:
       - ./config.json:/app/config.json:ro  # Mount the config file as read-only
-      - ./video-cache:/app/video-cache  # Mount the video-cache folder
-      - ./stream-cache:/app/stream-cache  # Mount the stream-cache folder
     environment:
       - FLASK_ENV=development
     stdin_open: true
