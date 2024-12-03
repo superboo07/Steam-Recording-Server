@@ -133,21 +133,7 @@
                 if (currentVideoPath) {
                     console.log("Preparing to download:", currentVideoPath);
                     try {
-                        const response = await fetch(currentVideoPath);
-                        if (!response.ok) {
-                            throw new Error(`Failed to fetch ${currentVideoPath}: ${response.statusText}`);
-                        }
-                        const blob = await response.blob();
-                        const url = URL.createObjectURL(blob);
-
-                        // Create a temporary link element for downloading
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = currentVideoPath.split("/").pop(); // Use the filename from the path
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
+                        window.open(currentVideoPath, '_blank').focus();
                     } catch (error) {
                         console.error("Error downloading video:", error);
                         alert("Failed to download the video.");
