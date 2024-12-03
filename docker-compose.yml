@@ -7,7 +7,22 @@ services:
       - "5000:5000"
     volumes:
       - ./config.json:/app/config.json:ro  # Mount the config file as read-only
+      - "exported-videos:/app/video-cache"
     environment:
       - FLASK_ENV=development
     stdin_open: true
     tty: true
+  handbrake:
+    image: jlesage/handbrake
+    ports:
+      - "5800:5800"
+    volumes:
+      - "handbrake-config:/config:rw"
+      - "exported-videos:/output:rw"
+      - "exported-videos:/storage:rw"
+
+volumes:
+  exported-videos:
+    external: false
+  handbrake-config:
+    external: false
