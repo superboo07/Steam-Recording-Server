@@ -51,7 +51,8 @@ def sync_ssh_to_cache():
                 if item.st_mode & 0o040000:  # Directory
                     recursive_copy(remote_item, local_item)
                 else:
-                    print(f"Syncing file: {remote_item} to {local_item}")
+                    if os.path.exists(local_item):
+                        continue
                     sftp.get(remote_item, local_item)
 
         recursive_copy(remote_recordings_folder, stream_cache_folder)
@@ -80,32 +81,12 @@ def list_videos():
         for file in files:
             if file == "session.mpd":
                 dash_file_path = os.path.join(root, file)
-
-                # Determine the naming logic based on the directory
-                relative_path = os.path.relpath(root, recordings_folder)
-                clip_path_parts = relative_path.split(os.sep)
-
-                if "clips" in clip_path_parts:
-                    # Naming logic for /clips/ path
-                    clip_index = clip_path_parts.index("clips")
-                    clip_name = "_".join(clip_path_parts[clip_index:])
-                    output_file_name = f"{clip_name}.mp4"
-                elif "video" in clip_path_parts:
-                    # Naming logic for /video/ path
-                    output_file_name = os.path.basename(os.path.dirname(dash_file_path)) + ".mp4"
-                else:
-                    # Skip if the file is not in a valid path
-                    print(f"Skipping unrelated path: {dash_file_path}")
-                    continue
-
+                output_file_name = os.path.basename(os.path.dirname(dash_file_path)) + ".mp4"
                 output_file_path = os.path.join(video_cache_folder, output_file_name)
-
-                print(f"Found DASH file: {dash_file_path}")
-                print(f"Output MP4 path: {output_file_path}")
 
                 # Transcode to MP4 if not already cached
                 if not os.path.exists(output_file_path):
-                    print(f"Transcoding: {dash_file_path} to {output_file_path}")
+                    print(f"Transcoding {dash_file_path} to {output_file_path}")
                     ffmpeg_command = [
                         "ffmpeg", "-y", "-i", dash_file_path, "-c", "copy", output_file_path
                     ]
@@ -124,8 +105,6 @@ def list_videos():
 
     return jsonify(videos)
 
-
-
 @app.route('/video-cache/<path:filename>')
 def serve_video(filename):
     file_path = os.path.join('video-cache', filename)
@@ -138,20 +117,6 @@ def serve_video(filename):
                 yield chunk
     
     return Response(generate(), mimetype='video/mp4')
-
-@app.route("/sync", methods=["POST"])
-def sync_now():
-    if ssh_enabled:
-        print("Sync triggered manually.")
-        try:
-            Thread(target=sync_ssh_to_cache).start()
-            return jsonify({"status": "success", "message": "Sync started successfully."}), 200
-        except Exception as e:
-            print(f"Error during sync: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
-    else:
-        return jsonify({"status": "error", "message": "SSH is not enabled."}), 400
-
 
 @app.after_request
 def add_cors_headers(response):
