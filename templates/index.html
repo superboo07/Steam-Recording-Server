@@ -4,18 +4,73 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Steam Recordings Player</title>
-    <!-- Include Shaka Player -->
     <script src="https://ajax.googleapis.com/ajax/libs/shaka-player/4.12.2/shaka-player.ui.js"></script>
     <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/shaka-player/4.12.2/controls.css">
     <style>
-        #videoContainer {
-            position: relative;
-            width: 640px;
-            margin: 20px auto;
+        body {
+            background-color: #121212;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            height: 100vh;
         }
+
+        h1 {
+            margin: 20px 0;
+            color: #e0e0e0;
+        }
+
+        #controlsContainer {
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            width: 80%;
+            margin-bottom: 20px;
+        }
+
+        #videoContainer {
+            width: 80%;
+            display: flex;
+            justify-content: flex-start;
+        }
+
         video {
-            width: 100%;
-            height: 100%;
+            background-color: #000000;
+            width: 640px;
+            height: 360px;
+            border: 1px solid #424242;
+        }
+
+        button, select {
+            background-color: #1e1e1e;
+            color: #ffffff;
+            border: 1px solid #424242;
+            padding: 10px;
+            margin-right: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        button:hover, select:hover {
+            background-color: #333333;
+        }
+
+        button:active, select:focus {
+            background-color: #424242;
+        }
+
+        select {
+            min-width: 200px;
+        }
+
+        #syncButton {
+            margin-left: auto;
         }
     </style>
     <script>
@@ -23,6 +78,7 @@
             const videoSelector = document.getElementById("videoSelector");
             const videoPlayer = document.getElementById("videoPlayer");
             const downloadButton = document.getElementById("downloadButton");
+            const syncButton = document.getElementById("syncButton");
 
             let currentVideoPath = "";
 
@@ -34,9 +90,10 @@
             });
 
             // Fetch the list of MP4 videos
-            fetch("/videos")
-                .then(response => response.json())
-                .then(videos => {
+            const loadVideos = async () => {
+                try {
+                    const response = await fetch("/videos");
+                    const videos = await response.json();
                     console.log("Videos received:", videos);
 
                     // Clear dropdown to avoid duplicates
@@ -49,10 +106,12 @@
                         option.textContent = video.name;
                         videoSelector.appendChild(option);
                     });
-                })
-                .catch(error => {
+                } catch (error) {
                     console.error("Error fetching videos:", error);
-                });
+                }
+            };
+
+            await loadVideos();
 
             // Handle video selection
             videoSelector.addEventListener("change", async () => {
@@ -70,13 +129,49 @@
             });
 
             // Handle MP4 download
-            downloadButton.addEventListener("click", () => {
+            downloadButton.addEventListener("click", async () => {
                 if (currentVideoPath) {
-                    const downloadUrl = currentVideoPath; // Path for the MP4 file
-                    console.log("Downloading video from:", downloadUrl);
-                    window.location.href = downloadUrl;
+                    console.log("Preparing to download:", currentVideoPath);
+                    try {
+                        const response = await fetch(currentVideoPath);
+                        if (!response.ok) {
+                            throw new Error(`Failed to fetch ${currentVideoPath}: ${response.statusText}`);
+                        }
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+
+                        // Create a temporary link element for downloading
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = currentVideoPath.split("/").pop(); // Use the filename from the path
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    } catch (error) {
+                        console.error("Error downloading video:", error);
+                        alert("Failed to download the video.");
+                    }
                 } else {
                     alert("Please select a video first!");
+                }
+            });
+
+            // Trigger Sync
+            syncButton.addEventListener("click", async () => {
+                console.log("Syncing...");
+                try {
+                    const response = await fetch("/sync", { method: "POST" });
+                    const result = await response.json();
+                    if (result.status === "success") {
+                        alert("Sync started successfully!");
+                        await loadVideos(); // Reload videos after sync
+                    } else {
+                        alert(`Error: ${result.message}`);
+                    }
+                } catch (error) {
+                    console.error("Error triggering sync:", error);
+                    alert("Failed to start sync.");
                 }
             });
         });
@@ -84,11 +179,12 @@
 </head>
 <body>
     <h1>Steam Recordings Player</h1>
-    <div>
+    <div id="controlsContainer">
         <select id="videoSelector">
             <option value="">Select a video</option>
         </select>
         <button id="downloadButton">Download MP4</button>
+        <button id="syncButton">Sync</button>
     </div>
     <div id="videoContainer">
         <video id="videoPlayer" controls autoplay></video>
