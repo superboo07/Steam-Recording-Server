@@ -121,6 +121,13 @@ def list_videos():
                     videos.append({"name": output_file_name, "path": f"/video-cache/{output_file_name}"})
                 else:
                     print(f"Failed to create MP4: {output_file_name}")
+                    
+    for file in os.listdir(video_cache_folder):
+        if file.lower().endswith(('.mp4', '.m4v')):
+            videos.append({
+                "name": file,
+                "path": f"/video-cache/{file}"
+            })
 
     return jsonify(videos)
 
