@@ -116,12 +116,6 @@ def list_videos():
                         print(f"FFmpeg error while processing {dash_file_path}: {e}")
                         continue
 
-                # Add MP4 to the video list
-                if os.path.exists(output_file_path):
-                    videos.append({"name": output_file_name, "path": f"/video-cache/{output_file_name}"})
-                else:
-                    print(f"Failed to create MP4: {output_file_name}")
-                    
     for file in os.listdir(video_cache_folder):
         if file.lower().endswith(('.mp4', '.m4v')):
             videos.append({
