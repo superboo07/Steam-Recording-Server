@@ -3,6 +3,7 @@ import json
 import paramiko
 import shutil
 import subprocess
+import re
 from flask import Flask, render_template, jsonify, abort, Response
 from threading import Thread
 
@@ -19,16 +20,22 @@ ssh_enabled = ssh_config.get("enabled", False)
 remote_recordings_folder = ssh_config.get("remote_path")
 stream_cache_folder = os.path.join(os.getcwd(), "stream-cache")
 
+syncing = False
+
 # Function to sync SSH folder into /stream-cache/
 def sync_ssh_to_cache():
     if not ssh_enabled:
         print("SSH sync is not enabled.")
         return
-
+    syncing = True
     try:
+        video_cache_folder = os.path.join("video-cache")
         # Clear and recreate cache
         if os.path.exists(stream_cache_folder):
             shutil.rmtree(stream_cache_folder)
+        if os.path.exists(video_cache_folder):
+            shutil.rmtree(video_cache_folder)
+
         os.makedirs(stream_cache_folder, exist_ok=True)
 
         # Establish SSH connection
@@ -68,52 +75,58 @@ def home():
 
 @app.route("/videos")
 def list_videos():
+    if syncing == True: return
     videos = []
-    video_cache_folder = os.path.join("video-cache")
+    video_cache_folder = os.path.abspath("video-cache")
     os.makedirs(video_cache_folder, exist_ok=True)
 
-    # Use cache if SSH is enabled
-    recordings_folder = stream_cache_folder if ssh_enabled else local_recordings_folder
+    recordings_folder = os.path.abspath("stream-cache")  # Absolute path to your recordings folder
 
-    # Scan for DASH manifests
     for root, dirs, files in os.walk(recordings_folder):
         for file in files:
             if file == "session.mpd":
                 dash_file_path = os.path.join(root, file)
-
-                # Determine the naming logic based on the directory
                 relative_path = os.path.relpath(root, recordings_folder)
-                clip_path_parts = relative_path.split(os.sep)
-
-                if "clips" in clip_path_parts:
-                    # Naming logic for /clips/ path
-                    clip_index = clip_path_parts.index("clips")
-                    clip_name = "_".join(clip_path_parts[clip_index:])
-                    output_file_name = f"{clip_name}.mp4"
-                elif "video" in clip_path_parts:
-                    # Naming logic for /video/ path
-                    output_file_name = os.path.basename(os.path.dirname(dash_file_path)) + ".mp4"
-                else:
-                    # Skip if the file is not in a valid path
-                    print(f"Skipping unrelated path: {dash_file_path}")
-                    continue
-
+                sanitized_path = relative_path.replace(os.sep, "_").replace(" ", "_")
+                output_file_name = f"{sanitized_path}.mp4"
                 output_file_path = os.path.join(video_cache_folder, output_file_name)
 
-                print(f"Found DASH file: {dash_file_path}")
-                print(f"Output MP4 path: {output_file_path}")
+                print(f"Processing MPD: {dash_file_path}")
+                print(f"Output MP4 Path: {output_file_path}")
 
-                # Transcode to MP4 if not already cached
                 if not os.path.exists(output_file_path):
-                    print(f"Transcoding: {dash_file_path} to {output_file_path}")
-                    ffmpeg_command = [
-                        "ffmpeg", "-y", "-i", dash_file_path, "-c", "copy", output_file_path
-                    ]
                     try:
+                        # Replace start="PT*S" with start="PT0.0S" in the MPD file
+                        with open(dash_file_path, "r+") as mpd_file:
+                            mpd_content = mpd_file.read()
+                            updated_content = re.sub(
+                                r'<Period id="0" start="PT[^"]+">',
+                                '<Period id="0" start="PT0.0S">',
+                                mpd_content
+                            )
+                            mpd_file.seek(0)
+                            mpd_file.write(updated_content)
+                            mpd_file.truncate()
+
+                        # Remux using FFmpeg with absolute path
+                        absolute_dash_file_path = os.path.abspath(dash_file_path)
+                        ffmpeg_command = [
+                            "ffmpeg",
+                            "-y",
+                            "-i", absolute_dash_file_path,
+                            "-c", "copy",
+                            output_file_path,
+                        ]
+
+                        print(f"Executing FFmpeg: {' '.join(ffmpeg_command)}")
                         subprocess.run(ffmpeg_command, check=True)
                         print(f"Successfully created {output_file_path}")
+
                     except subprocess.CalledProcessError as e:
-                        print(f"FFmpeg error while processing {dash_file_path}: {e}")
+                        print(f"FFmpeg Error: {e}")
+                        continue
+                    except Exception as e:
+                        print(f"Error processing MPD {dash_file_path}: {e}")
                         continue
 
     for file in os.listdir(video_cache_folder):
@@ -124,8 +137,6 @@ def list_videos():
             })
 
     return jsonify(videos)
-
-
 
 @app.route('/video-cache/<path:filename>')
 def serve_video(filename):
@@ -162,10 +173,6 @@ def add_cors_headers(response):
     return response
 
 if __name__ == "__main__":
-    # Automatically start sync on application startup
-    if ssh_enabled:
-        print("Starting initial sync...")
-        Thread(target=sync_ssh_to_cache).start()
 
     # Make the server accessible to other devices
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000)
