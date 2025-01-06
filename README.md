@@ -1,6 +1,6 @@
 # Steam Recording Server
 
-Most of this shit is AI generated code cause I did this at 3 AM and honestly cannot be bothered to learn interacting with SSH stuff in python, or how to host a webUI. Expecially for something thats both open source and not even strictly licensed. 
+Most of this shit is AI generated code cause I did this at 3 AM and honestly cannot be bothered to learn interacting with SSH stuff in python, or how to host a webUI. Expecially for something thats both open source and not even strictly licensed. If you can get all this working however please just use syncthing, its way more secure then plaintexting your ssh password. Also it isn't slow as balls.
 
 config.json:
 ```
