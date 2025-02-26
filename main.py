@@ -6,8 +6,8 @@ import subprocess
 import re
 from flask import Flask, render_template, jsonify, abort, Response
 from threading import Thread
-
-app = Flask(__name__)
+from scp import SCPClient
+from concurrent.futures import ThreadPoolExecutor
 
 # Load config
 with open("config.json", "r") as config_file:
@@ -22,20 +22,24 @@ stream_cache_folder = os.path.join(os.getcwd(), "stream-cache")
 
 syncing = False
 
+app = Flask(__name__)
+
 # Function to sync SSH folder into /stream-cache/
 def sync_ssh_to_cache():
+    global syncing
     if not ssh_enabled:
         print("SSH sync is not enabled.")
         return
+    if syncing:
+        print("Sync already in progress.")
+        return
     syncing = True
+    print("Starting SCP sync...")
+
     try:
-        video_cache_folder = os.path.join("video-cache")
         # Clear and recreate cache
         if os.path.exists(stream_cache_folder):
             shutil.rmtree(stream_cache_folder)
-        if os.path.exists(video_cache_folder):
-            shutil.rmtree(video_cache_folder)
-
         os.makedirs(stream_cache_folder, exist_ok=True)
 
         # Establish SSH connection
@@ -46,28 +50,23 @@ def sync_ssh_to_cache():
             port=ssh_config["port"],
             username=ssh_config["username"],
             password=ssh_config["password"],
+            timeout=60,  # Increase timeout
+            compress=True
         )
-        sftp = ssh.open_sftp()
 
-        def recursive_copy(remote_dir, local_dir):
-            os.makedirs(local_dir, exist_ok=True)
-            items = sftp.listdir_attr(remote_dir)
-            for item in items:
-                remote_item = os.path.join(remote_dir, item.filename).replace("\\", "/")
-                local_item = os.path.join(local_dir, item.filename)
-                if item.st_mode & 0o040000:  # Directory
-                    recursive_copy(remote_item, local_item)
-                else:
-                    print(f"Syncing file: {remote_item} to {local_item}")
-                    sftp.get(remote_item, local_item)
-
-        recursive_copy(remote_recordings_folder, stream_cache_folder)
-        sftp.close()
-        ssh.close()
-        print("SSH sync completed successfully.")
+        # Use SCP for transfer
+        with SCPClient(ssh.get_transport()) as scp:
+            print(f"Syncing contents of {remote_recordings_folder} to {stream_cache_folder}...")
+            # Use the wildcard to only copy the contents
+            scp.get(f"{remote_recordings_folder}clips/", stream_cache_folder, recursive=True)
+            scp.get(f"{remote_recordings_folder}video/", stream_cache_folder, recursive=True)
+            print("SCP sync completed successfully.")
 
     except Exception as e:
-        print(f"SSH Sync Error: {e}")
+        print(f"Error during SCP sync: {e}")
+    finally:
+        syncing = False
+
 
 @app.route("/")
 def home():
@@ -75,7 +74,8 @@ def home():
 
 @app.route("/videos")
 def list_videos():
-    if syncing == True: return
+    while syncing:
+        pass  # Wait for syncing to complete
     videos = []
     video_cache_folder = os.path.abspath("video-cache")
     os.makedirs(video_cache_folder, exist_ok=True)
@@ -91,43 +91,46 @@ def list_videos():
                 output_file_name = f"{sanitized_path}.mp4"
                 output_file_path = os.path.join(video_cache_folder, output_file_name)
 
+                if os.path.exists(output_file_path):
+                    print(f"Skipping already cached video: {output_file_path}")
+                    continue
+
                 print(f"Processing MPD: {dash_file_path}")
                 print(f"Output MP4 Path: {output_file_path}")
 
-                if not os.path.exists(output_file_path):
-                    try:
-                        # Replace start="PT*S" with start="PT0.0S" in the MPD file
-                        with open(dash_file_path, "r+") as mpd_file:
-                            mpd_content = mpd_file.read()
-                            updated_content = re.sub(
-                                r'<Period id="0" start="PT[^"]+">',
-                                '<Period id="0" start="PT0.0S">',
-                                mpd_content
-                            )
-                            mpd_file.seek(0)
-                            mpd_file.write(updated_content)
-                            mpd_file.truncate()
+                try:
+                    # Replace start="PT*S" with start="PT0.0S" in the MPD file
+                    with open(dash_file_path, "r+") as mpd_file:
+                        mpd_content = mpd_file.read()
+                        updated_content = re.sub(
+                            r'<Period id="0" start="PT[^"]+">',
+                            '<Period id="0" start="PT0.0S">',
+                            mpd_content
+                        )
+                        mpd_file.seek(0)
+                        mpd_file.write(updated_content)
+                        mpd_file.truncate()
 
-                        # Remux using FFmpeg with absolute path
-                        absolute_dash_file_path = os.path.abspath(dash_file_path)
-                        ffmpeg_command = [
-                            "ffmpeg",
-                            "-y",
-                            "-i", absolute_dash_file_path,
-                            "-c", "copy",
-                            output_file_path,
-                        ]
+                    # Remux using FFmpeg with absolute path
+                    absolute_dash_file_path = os.path.abspath(dash_file_path)
+                    ffmpeg_command = [
+                        "ffmpeg",
+                        "-y",
+                        "-i", absolute_dash_file_path,
+                        "-c", "copy",
+                        output_file_path,
+                    ]
 
-                        print(f"Executing FFmpeg: {' '.join(ffmpeg_command)}")
-                        subprocess.run(ffmpeg_command, check=True)
-                        print(f"Successfully created {output_file_path}")
+                    print(f"Executing FFmpeg: {' '.join(ffmpeg_command)}")
+                    subprocess.run(ffmpeg_command, check=True)
+                    print(f"Successfully created {output_file_path}")
 
-                    except subprocess.CalledProcessError as e:
-                        print(f"FFmpeg Error: {e}")
-                        continue
-                    except Exception as e:
-                        print(f"Error processing MPD {dash_file_path}: {e}")
-                        continue
+                except subprocess.CalledProcessError as e:
+                    print(f"FFmpeg Error: {e}")
+                    continue
+                except Exception as e:
+                    print(f"Error processing MPD {dash_file_path}: {e}")
+                    continue
 
     for file in os.listdir(video_cache_folder):
         if file.lower().endswith(('.mp4', '.m4v')):
@@ -163,6 +166,11 @@ def sync_now():
             return jsonify({"status": "error", "message": str(e)}), 500
     else:
         return jsonify({"status": "error", "message": "SSH is not enabled."}), 400
+    
+
+@app.route("/sync-status", methods=["GET"])
+def get_sync_status():
+    return jsonify({"syncing": syncing})
 
 
 @app.after_request

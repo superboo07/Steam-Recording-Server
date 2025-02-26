@@ -29,7 +29,7 @@
         #controlsContainer {
             display: flex;
             justify-content: flex-start;
-            align-items: center;
+            align-items: left;
             width: 80%;
             margin-bottom: 20px;
         }
@@ -70,8 +70,18 @@
             min-width: 200px;
         }
 
-        #syncButton {
-            margin-left: auto;
+        #downloadButton {
+            align-items: left;
+            justify-content: flex-start;
+        }
+
+        #syncStatusBar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 10px;
+            transition: background-color 0.3s ease;
         }
     </style>
     <script>
@@ -80,6 +90,7 @@
             const videoPlayer = document.getElementById("videoPlayer");
             const downloadButton = document.getElementById("downloadButton");
             const syncButton = document.getElementById("syncButton");
+            const syncStatusBar = document.getElementById("syncStatusBar");
 
             let currentVideoPath = "";
 
@@ -134,9 +145,27 @@
                 if (currentVideoPath) {
                     console.log("Preparing to download:", currentVideoPath);
                     try {
-                        window.open(currentVideoPath, '_blank').focus();
+                        const response = await fetch(currentVideoPath);
+                        if (!response.ok) {
+                            throw new Error("Failed to fetch the video.");
+                        }
+
+                        const videoBlob = await response.blob();
+                        const blobUrl = URL.createObjectURL(videoBlob);
+
+                        // Create a temporary <a> element for download
+                        const anchor = document.createElement("a");
+                        anchor.href = blobUrl;
+                        anchor.download = currentVideoPath.split('/').pop(); // Use video filename for download
+                        document.body.appendChild(anchor);
+                        anchor.click();
+
+                        // Clean up
+                        document.body.removeChild(anchor);
+                        URL.revokeObjectURL(blobUrl);
+                        console.log("Download initiated successfully!");
                     } catch (error) {
-                        console.error("Error downloading video:", error);
+                        console.error("Error during download:", error);
                         alert("Failed to download the video.");
                     }
                 } else {
@@ -162,6 +191,23 @@
                 }
             });
         });
+        // Check Sync Status and Update Bar
+        const checkSyncStatus = async () => { // can't be bothered to fix formatting I'm on trackpad
+                try {
+                    const response = await fetch("/sync-status");
+                    const { syncing } = await response.json();
+                    console.log("Syncing status:", syncing); // Debug log
+                    if (syncing) {
+                        syncStatusBar.style.backgroundColor = "red";
+                    } else {
+                        syncStatusBar.style.backgroundColor = "green";
+                    }
+                } catch (error) {
+                    console.error("Error fetching sync status:", error);
+                }
+            };
+        // Poll for sync status every second
+        setInterval(checkSyncStatus, 1000);
     </script>
 </head>
 <body>
@@ -170,11 +216,12 @@
         <select id="videoSelector">
             <option value="">Select a video</option>
         </select>
-        <button id="downloadButton">Download MP4</button>
         <button id="syncButton">Sync</button>
     </div>
     <div id="videoContainer">
         <video id="videoPlayer" controls autoplay></video>
     </div>
+    <button id="downloadButton">Download MP4</button>
+    <div id="syncStatusBar"></div>
 </body>
 </html>
