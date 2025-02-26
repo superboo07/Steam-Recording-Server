@@ -1,5 +1,5 @@
 services:
-  flask-app:
+  steam-recording:
     build:
       context: .
       dockerfile: Dockerfile

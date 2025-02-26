@@ -7,12 +7,16 @@ document.addEventListener("DOMContentLoaded", () => {
     fetch("/videos")
         .then(response => response.json())
         .then(videos => {
+            console.log("Videos received:", videos); // Debug log
             videos.forEach(video => {
                 const option = document.createElement("option");
                 option.value = video.path; // Use the video path for playback and download
                 option.textContent = video.name; // Show the folder name
                 videoSelector.appendChild(option);
             });
+        })
+        .catch(error => {
+            console.error("Error fetching videos:", error);
         });
 
     // Enable download button when a video is selected

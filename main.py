@@ -91,10 +91,6 @@ def list_videos():
                 output_file_name = f"{sanitized_path}.mp4"
                 output_file_path = os.path.join(video_cache_folder, output_file_name)
 
-                if os.path.exists(output_file_path):
-                    print(f"Skipping already cached video: {output_file_path}")
-                    continue
-
                 print(f"Processing MPD: {dash_file_path}")
                 print(f"Output MP4 Path: {output_file_path}")
 
@@ -115,7 +111,7 @@ def list_videos():
                     absolute_dash_file_path = os.path.abspath(dash_file_path)
                     ffmpeg_command = [
                         "ffmpeg",
-                        "-y",
+                        "-y",  # Add the -y flag to always overwrite
                         "-i", absolute_dash_file_path,
                         "-c", "copy",
                         output_file_path,
@@ -138,6 +134,9 @@ def list_videos():
                 "name": file,
                 "path": f"/video-cache/{file}"
             })
+
+    # Sort videos alphabetically by name
+    videos.sort(key=lambda x: x["name"])
 
     return jsonify(videos)
 
