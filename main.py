@@ -4,7 +4,6 @@ import paramiko
 import shutil
 import subprocess
 import re
-import tempfile
 from flask import Flask, render_template, jsonify, abort, Response
 from threading import Thread
 from scp import SCPClient
@@ -116,16 +115,16 @@ def list_videos():
                         mpd_content
                     )
 
-                    # Create a temporary file with the modified content
-                    with tempfile.NamedTemporaryFile(mode='w+', suffix='.mpd', delete=False) as temp_mpd:
+                    # Create temporary MPD
+                    temp_mpd_path = os.path.join(root, "temp_session.mpd")
+                    with open(temp_mpd_path, "w") as temp_mpd:
                         temp_mpd.write(updated_content)
-                        temp_mpd_path = temp_mpd.name
 
                     try:
-                        # Remux using FFmpeg with the temporary MPD file
+                        # Remux using FFmpeg
                         ffmpeg_command = [
                             "ffmpeg",
-                            "-y",
+                            "-y",  
                             "-i", temp_mpd_path,
                             "-c", "copy",
                             output_file_path,
@@ -136,8 +135,9 @@ def list_videos():
                         print(f"Successfully created {output_file_path}")
 
                     finally:
-                        # Clean up the temporary file
-                        os.unlink(temp_mpd_path)
+                        # Clean up the MPD in case the user uses syncthing like recommended
+                        if os.path.exists(temp_mpd_path):
+                            os.remove(temp_mpd_path)
 
                 except subprocess.CalledProcessError as e:
                     print(f"FFmpeg Error: {e}")
