@@ -5,14 +5,14 @@ Most of this shit is AI generated code cause I did this at 3 AM and honestly can
 config.json:
 ```
 {
-    "steam_recordings_folder": "/path/to/local/recordings",  // Path to the local steam recordings folder
+    "steam_recordings_folder": "/path/to/local/recordings",
     "ssh": {
-        "enabled": false,  // Set to true if using SSH to sync recordings
-        "host": "your.ssh.server",  // SSH server hostname or IP
-        "port": 22,  // SSH server port (default is 22)
-        "username": "your-username",  // SSH username
-        "password": "your-password",  // SSH password
-        "remote_path": "/path/to/remote/recordings"  // Path to the remote steam recordings folder
+        "enabled": false,
+        "host": "your.ssh.server",
+        "port": 22,
+        "username": "your-username",
+        "password": "your-password",
+        "remote_path": "/path/to/remote/recordings"
     }
 }
 ```
