@@ -87,7 +87,7 @@ def list_videos():
         if file.lower().endswith(('.mp4', '.m4v')):
             existing_videos[file] = os.path.join(video_cache_folder, file)
 
-    for root, dirs, files in os.walk(recordings_folder):
+    for root, dirs, files in os.walk(local_recordings_folde):
         for file in files:
             if file == "session.mpd":
                 dash_file_path = os.path.join(root, file)
