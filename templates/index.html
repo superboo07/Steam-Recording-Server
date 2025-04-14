@@ -91,6 +91,7 @@
             const downloadButton = document.getElementById("downloadButton");
             const syncButton = document.getElementById("syncButton");
             const syncStatusBar = document.getElementById("syncStatusBar");
+            const clearCacheButton = document.getElementById("clearCacheButton");
 
             let currentVideoPath = "";
 
@@ -190,6 +191,26 @@
                     alert("Failed to start sync.");
                 }
             });
+
+            // Handle Clear Cache
+            clearCacheButton.addEventListener("click", async () => {
+                if (confirm("Are you sure you want to clear the video cache? This will delete all converted videos.")) {
+                    console.log("Clearing cache...");
+                    try {
+                        const response = await fetch("/clear-cache", { method: "POST" });
+                        const result = await response.json();
+                        if (result.status === "success") {
+                            alert("Cache cleared successfully!");
+                            await loadVideos(); // Reload videos after clearing cache
+                        } else {
+                            alert(`Error: ${result.message}`);
+                        }
+                    } catch (error) {
+                        console.error("Error clearing cache:", error);
+                        alert("Failed to clear cache.");
+                    }
+                }
+            });
         });
         // Check Sync Status and Update Bar
         const checkSyncStatus = async () => { // can't be bothered to fix formatting I'm on trackpad
@@ -217,6 +238,7 @@
             <option value="">Select a video</option>
         </select>
         <button id="syncButton">Sync</button>
+        <button id="clearCacheButton">Clear Cache</button>
     </div>
     <div id="videoContainer">
         <video id="videoPlayer" controls autoplay></video>

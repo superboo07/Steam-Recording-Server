@@ -4,6 +4,7 @@ import paramiko
 import shutil
 import subprocess
 import re
+import tempfile
 from flask import Flask, render_template, jsonify, abort, Response
 from threading import Thread
 from scp import SCPClient
@@ -13,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 with open("config.json", "r") as config_file:
     config = json.load(config_file)
 
-local_recordings_folder = config["steam_recordings_folder"]
+local_recordings_folder = os.path.abspath(config["steam_recordings_folder"])
 ssh_config = config.get("ssh", {})
 
 ssh_enabled = ssh_config.get("enabled", False)
@@ -80,7 +81,13 @@ def list_videos():
     video_cache_folder = os.path.abspath("video-cache")
     os.makedirs(video_cache_folder, exist_ok=True)
 
-    recordings_folder = os.path.abspath("stream-cache")  # Absolute path to your recordings folder
+    recordings_folder = os.path.abspath(local_recordings_folder)  # Absolute path to your recordings folder
+
+    # First, get list of existing MP4 files
+    existing_videos = {}
+    for file in os.listdir(video_cache_folder):
+        if file.lower().endswith(('.mp4', '.m4v')):
+            existing_videos[file] = os.path.join(video_cache_folder, file)
 
     for root, dirs, files in os.walk(recordings_folder):
         for file in files:
@@ -91,35 +98,48 @@ def list_videos():
                 output_file_name = f"{sanitized_path}.mp4"
                 output_file_path = os.path.join(video_cache_folder, output_file_name)
 
+                # Skip if the MP4 file already exists
+                if output_file_name in existing_videos:
+                    print(f"Skipping already converted video: {output_file_name}")
+                    continue
+
                 print(f"Processing MPD: {dash_file_path}")
                 print(f"Output MP4 Path: {output_file_path}")
 
                 try:
-                    # Replace start="PT*S" with start="PT0.0S" in the MPD file
-                    with open(dash_file_path, "r+") as mpd_file:
+                    # Read the original MPD content
+                    with open(dash_file_path, "r") as mpd_file:
                         mpd_content = mpd_file.read()
-                        updated_content = re.sub(
-                            r'<Period id="0" start="PT[^"]+">',
-                            '<Period id="0" start="PT0.0S">',
-                            mpd_content
-                        )
-                        mpd_file.seek(0)
-                        mpd_file.write(updated_content)
-                        mpd_file.truncate()
+                    
+                    # Create modified content in memory
+                    updated_content = re.sub(
+                        r'<Period id="0" start="PT[^"]+">',
+                        '<Period id="0" start="PT0.0S">',
+                        mpd_content
+                    )
 
-                    # Remux using FFmpeg with absolute path
-                    absolute_dash_file_path = os.path.abspath(dash_file_path)
-                    ffmpeg_command = [
-                        "ffmpeg",
-                        "-y",  # Add the -y flag to always overwrite
-                        "-i", absolute_dash_file_path,
-                        "-c", "copy",
-                        output_file_path,
-                    ]
+                    # Create a temporary file with the modified content
+                    with tempfile.NamedTemporaryFile(mode='w+', suffix='.mpd', delete=False) as temp_mpd:
+                        temp_mpd.write(updated_content)
+                        temp_mpd_path = temp_mpd.name
 
-                    print(f"Executing FFmpeg: {' '.join(ffmpeg_command)}")
-                    subprocess.run(ffmpeg_command, check=True)
-                    print(f"Successfully created {output_file_path}")
+                    try:
+                        # Remux using FFmpeg with the temporary MPD file
+                        ffmpeg_command = [
+                            "ffmpeg",
+                            "-y",
+                            "-i", temp_mpd_path,
+                            "-c", "copy",
+                            output_file_path,
+                        ]
+
+                        print(f"Executing FFmpeg: {' '.join(ffmpeg_command)}")
+                        subprocess.run(ffmpeg_command, check=True)
+                        print(f"Successfully created {output_file_path}")
+
+                    finally:
+                        # Clean up the temporary file
+                        os.unlink(temp_mpd_path)
 
                 except subprocess.CalledProcessError as e:
                     print(f"FFmpeg Error: {e}")
@@ -128,6 +148,7 @@ def list_videos():
                     print(f"Error processing MPD {dash_file_path}: {e}")
                     continue
 
+    # List all videos in the cache directory
     for file in os.listdir(video_cache_folder):
         if file.lower().endswith(('.mp4', '.m4v')):
             videos.append({
@@ -171,6 +192,16 @@ def sync_now():
 def get_sync_status():
     return jsonify({"syncing": syncing})
 
+@app.route("/clear-cache", methods=["POST"])
+def clear_cache():
+    try:
+        video_cache_folder = os.path.abspath("video-cache")
+        if os.path.exists(video_cache_folder):
+            shutil.rmtree(video_cache_folder)
+            os.makedirs(video_cache_folder)  # Recreate the empty directory
+        return jsonify({"status": "success", "message": "Cache cleared successfully"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.after_request
 def add_cors_headers(response):
