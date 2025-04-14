@@ -81,8 +81,6 @@ def list_videos():
     video_cache_folder = os.path.abspath("video-cache")
     os.makedirs(video_cache_folder, exist_ok=True)
 
-    recordings_folder = os.path.abspath(local_recordings_folder)  # Absolute path to your recordings folder
-
     # First, get list of existing MP4 files
     existing_videos = {}
     for file in os.listdir(video_cache_folder):
@@ -93,7 +91,7 @@ def list_videos():
         for file in files:
             if file == "session.mpd":
                 dash_file_path = os.path.join(root, file)
-                relative_path = os.path.relpath(root, recordings_folder)
+                relative_path = os.path.relpath(root, local_recordings_folder)
                 sanitized_path = relative_path.replace(os.sep, "_").replace(" ", "_")
                 output_file_name = f"{sanitized_path}.mp4"
                 output_file_path = os.path.join(video_cache_folder, output_file_name)
